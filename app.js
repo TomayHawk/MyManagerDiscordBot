@@ -1,17 +1,19 @@
 import 'dotenv/config';
-<<<<<<< HEAD
-import { Client, GatewayIntentBits } from 'discord.js';
+import { Client, GatewayIntentBits, ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder, ButtonBuilder, ButtonStyle, InteractionType } from 'discord.js';
 import { google } from 'googleapis';
-=======
-import { Client, GatewayIntentBits, REST, Routes } from 'discord.js';
->>>>>>> parent of 3c36bea (Simplified Discord Bot)
 
 const client = new Client({
-  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent]
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.MessageContent,
+    GatewayIntentBits.DirectMessages
+  ],
+  partials: ['CHANNEL', 'MESSAGE', 'USER']
 });
 
 const KEY_PATH = 'mymanager-service-account.json';
-const SPREADSHEET_ID = '1cNDmKyyC4IeDrCC4ktwy49Y3PTAZYbvOkjSv_tvUvAw';
+const SPREADSHEET_ID = process.env.SPREADSHEET_ID;
 const RANGE = 'Tasks!A2:Z1000';
 
 const auth = new google.auth.GoogleAuth({
@@ -41,48 +43,89 @@ client.once('ready', () => {
   console.log('Bot is online!');
 });
 
-<<<<<<< HEAD
 client.on('messageCreate', async (message) => {
   if (message.content.startsWith('add ') && !message.author.bot) {
     const taskContent = message.content.slice(4).trim();
-    message.channel.send(`Added item: ${taskContent}`);
-    console.log(`Variable: ${taskContent}`);
 
-    const taskDetails = [
-      taskContent, // Task description
-      "default_type",
-      "default_priority",
-      "default_time_required",
-      "default_time_allocation",
-      "default_deadline",
-      "FALSE", // Completion status
-      "default_location",
-      "default_notification"
-    ];
+    const button = new ButtonBuilder()
+      .setCustomId('showModal')
+      .setLabel('Add Details')
+      .setStyle(ButtonStyle.Primary);
 
-    // Add the task directly to Google Sheets
-    await addTaskToSheet(taskDetails);
-=======
-client.on('messageCreate', (message) => {
+    await message.channel.send({
+      content: `You added task: ${taskContent}.`,
+      components: [new ActionRowBuilder().addComponents(button)],
+    });
 
-  // Check if the message starts with "add" and is not sent by a bot
-  if (message.content.startsWith('add ') && !message.author.bot) {
-    console.log(`here`);
+    // Handle button click to open modal
+    client.on('interactionCreate', async (interaction) => {
+      if (!interaction.isButton()) return;
 
-    // Extract the string after "add "
-    const input = message.content.slice(4).trim();
+      if (interaction.customId === 'showModal') {
+        const modal = new ModalBuilder()
+          .setCustomId('taskModal')
+          .setTitle('Add Task Details');
 
-    // Save the input to a variable
-    let inputTask = input;
-    // /////// let inputDuration = input;
-    // /////// let inputTime = input;
+        const taskType = new TextInputBuilder()
+          .setCustomId('taskType')
+          .setLabel('Task Type')
+          .setStyle(TextInputStyle.Short)
+          .setRequired(false);
 
-    // Optional: send confirmation in the chat
-    message.channel.send(`Added item: ${inputTask}`);
+        const taskPriority = new TextInputBuilder()
+          .setCustomId('taskPriority')
+          .setLabel('Priority')
+          .setStyle(TextInputStyle.Short)
+          .setRequired(false);
 
-    // Log the variable for debugging
-    console.log(`Variable: ${inputTask}`);
->>>>>>> parent of 3c36bea (Simplified Discord Bot)
+        const taskTimeRequired = new TextInputBuilder()
+          .setCustomId('taskTimeRequired')
+          .setLabel('Time Required')
+          .setStyle(TextInputStyle.Short)
+          .setRequired(false);
+
+        const taskTimeAllocation = new TextInputBuilder()
+          .setCustomId('taskTimeAllocation')
+          .setLabel('Time Allocation')
+          .setStyle(TextInputStyle.Short)
+          .setRequired(false);
+
+        const taskDeadline = new TextInputBuilder()
+          .setCustomId('taskDeadline')
+          .setLabel('Deadline (optional)')
+          .setStyle(TextInputStyle.Short)
+          .setRequired(false);
+
+        modal.addComponents(
+          new ActionRowBuilder().addComponents(taskType),
+          new ActionRowBuilder().addComponents(taskPriority),
+          new ActionRowBuilder().addComponents(taskTimeRequired),
+          new ActionRowBuilder().addComponents(taskTimeAllocation),
+          new ActionRowBuilder().addComponents(taskDeadline)
+        );
+
+        await interaction.showModal(modal);
+      }
+
+      if (interaction.type === InteractionType.ModalSubmit && interaction.customId === 'taskModal') {
+
+        const taskDetails = [
+          taskContent,
+          interaction.fields.getTextInputValue('taskType') || 'default_type',
+          interaction.fields.getTextInputValue('taskPriority') || 'default_priority',
+          interaction.fields.getTextInputValue('taskTimeRequired') || 'default_time_required',
+          interaction.fields.getTextInputValue('taskTimeAllocation') || 'default_deadline_required',
+          taskDeadline = interaction.fields.getTextInputValue('taskDeadline') || 'default_deadline',
+          "FALSE", // Completion status
+          "default_location",
+          "default_notification"
+        ];
+
+        await addTaskToSheet(taskDetails);
+
+        await interaction.reply({ content: `Task added: ${taskContent}`, ephemeral: true });
+      }
+    });
   }
 });
 
