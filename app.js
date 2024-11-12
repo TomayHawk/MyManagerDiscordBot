@@ -1,6 +1,22 @@
 import 'dotenv/config';
-import { Client, GatewayIntentBits, ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder, ButtonBuilder, ButtonStyle, InteractionType } from 'discord.js';
+import { Client, GatewayIntentBits, ActionRowBuilder, InteractionType, ModalBuilder } from 'discord.js';
 import { google } from 'googleapis';
+
+import {
+  taskTypeDropdown,
+  taskPriorityDropdown,
+  taskCategoryDropdown,
+  taskDifficultyDropdown,
+  taskTimeRequiredDropdown,
+  taskNotification1Dropdown,
+  taskNotification2Dropdown,
+  moreDetailsButton,
+  submitTaskButton,
+  taskTimeAllocation,
+  taskDeadline,
+  taskLocation,
+  taskNotes
+} from './components.js';
 
 const client = new Client({
   intents: [
@@ -23,6 +39,10 @@ const auth = new google.auth.GoogleAuth({
 
 const sheets = google.sheets({ version: 'v4', auth });
 
+let firstResponse;
+let secondResponse;
+let taskDetails = ['defaultTask', 'Task', 'Medium', 'Personal', 'Medium', '-', '30 minutes', '-', '-', 'FALSE', '-', '-', '-'];
+
 async function addTaskToSheet(taskDetails) {
   try {
     await sheets.spreadsheets.values.append({
@@ -35,7 +55,7 @@ async function addTaskToSheet(taskDetails) {
     });
     console.log('Task added to Google Sheets');
   } catch (error) {
-    console.error('Error adding task:', error);
+    console.error('Error adding task', error);
   }
 }
 
@@ -46,89 +66,75 @@ client.once('ready', () => {
 client.on('messageCreate', async (message) => {
   if (message.content.startsWith('add ') && !message.author.bot) {
     const taskContent = message.content.slice(4).trim();
+    taskDetails = [taskContent, 'Task', 'Medium', 'Personal', 'Medium', '-', '30 minutes', '-', '-', 'FALSE', '-', '-', '-'];
 
-    const button = new ButtonBuilder()
-      .setCustomId('showModal')
-      .setLabel('Add Details')
-      .setStyle(ButtonStyle.Primary);
-
-    await message.channel.send({
-      content: `You added task: ${taskContent}.`,
-      components: [new ActionRowBuilder().addComponents(button)],
+    firstResponse = await message.channel.send({
+      content: `Adding task: ${taskContent}. Please choose details:`,
+      components: [
+        new ActionRowBuilder().addComponents(taskTypeDropdown),
+        new ActionRowBuilder().addComponents(taskPriorityDropdown),
+        new ActionRowBuilder().addComponents(taskCategoryDropdown),
+        new ActionRowBuilder().addComponents(taskDifficultyDropdown),
+        new ActionRowBuilder().addComponents(taskTimeRequiredDropdown)
+      ]
     });
-
-    // Handle button click to open modal
-    client.on('interactionCreate', async (interaction) => {
-      if (!interaction.isButton()) return;
-
-      if (interaction.customId === 'showModal') {
-        const modal = new ModalBuilder()
-          .setCustomId('taskModal')
-          .setTitle('Add Task Details');
-
-        const taskType = new TextInputBuilder()
-          .setCustomId('taskType')
-          .setLabel('Task Type')
-          .setStyle(TextInputStyle.Short)
-          .setRequired(false);
-
-        const taskPriority = new TextInputBuilder()
-          .setCustomId('taskPriority')
-          .setLabel('Priority')
-          .setStyle(TextInputStyle.Short)
-          .setRequired(false);
-
-        const taskTimeRequired = new TextInputBuilder()
-          .setCustomId('taskTimeRequired')
-          .setLabel('Time Required')
-          .setStyle(TextInputStyle.Short)
-          .setRequired(false);
-
-        const taskTimeAllocation = new TextInputBuilder()
-          .setCustomId('taskTimeAllocation')
-          .setLabel('Time Allocation')
-          .setStyle(TextInputStyle.Short)
-          .setRequired(false);
-
-        const taskDeadline = new TextInputBuilder()
-          .setCustomId('taskDeadline')
-          .setLabel('Deadline (optional)')
-          .setStyle(TextInputStyle.Short)
-          .setRequired(false);
-
-        modal.addComponents(
-          new ActionRowBuilder().addComponents(taskType),
-          new ActionRowBuilder().addComponents(taskPriority),
-          new ActionRowBuilder().addComponents(taskTimeRequired),
-          new ActionRowBuilder().addComponents(taskTimeAllocation),
-          new ActionRowBuilder().addComponents(taskDeadline)
-        );
-
-        await interaction.showModal(modal);
-      }
-
-      if (interaction.type === InteractionType.ModalSubmit && interaction.customId === 'taskModal') {
-
-        const taskDetails = [
-          taskContent,
-          interaction.fields.getTextInputValue('taskType') || 'default_type',
-          interaction.fields.getTextInputValue('taskPriority') || 'default_priority',
-          interaction.fields.getTextInputValue('taskTimeRequired') || 'default_time_required',
-          interaction.fields.getTextInputValue('taskTimeAllocation') || 'default_deadline_required',
-          taskDeadline = interaction.fields.getTextInputValue('taskDeadline') || 'default_deadline',
-          "FALSE", // Completion status
-          "default_location",
-          "default_notification"
-        ];
-
-        await addTaskToSheet(taskDetails);
-
-        await interaction.reply({ content: `Task added: ${taskContent}`, ephemeral: true });
-      }
+    secondResponse = await message.channel.send({
+      components: [
+        new ActionRowBuilder().addComponents(taskNotification1Dropdown),
+        new ActionRowBuilder().addComponents(taskNotification2Dropdown),
+        new ActionRowBuilder().addComponents(moreDetailsButton, submitTaskButton)
+      ]
     });
   }
 });
 
-client.login(process.env.DISCORD_TOKEN);
+client.on('interactionCreate', async (interaction) => {
+  if (interaction.isStringSelectMenu()) {
+    await interaction.deferUpdate();
 
-// /////// need to learn about cogs
+    const customIdToIndex = {
+      taskType: 1,
+      taskPriority: 2,
+      taskCategory: 3,
+      taskDifficulty: 4,
+      taskTimeRequired: 6,
+      taskNotification1: 11,
+      taskNotification2: 12
+    };
+
+    if (customIdToIndex[interaction.customId] !== undefined) {
+      taskDetails[customIdToIndex[interaction.customId]] = interaction.values[0];
+    }
+  } else if (interaction.isButton()) {
+    if (interaction.customId === 'moreDetails') {
+      const taskModal = new ModalBuilder()
+        .setCustomId('taskModal')
+        .setTitle('Add Task Details');
+
+      taskModal.addComponents(
+        new ActionRowBuilder().addComponents(taskTimeAllocation),
+        new ActionRowBuilder().addComponents(taskDeadline),
+        new ActionRowBuilder().addComponents(taskLocation),
+        new ActionRowBuilder().addComponents(taskNotes)
+      );
+
+      interaction.showModal(taskModal);
+    } else if (interaction.customId === 'submitTask') {
+      await interaction.deferUpdate();
+
+      firstResponse.delete();
+      secondResponse.delete();
+      addTaskToSheet(taskDetails)
+      interaction.followUp({ content: 'Task added successfully!', ephemeral: true });
+    }
+  } else if (interaction.isModalSubmit() && interaction.customId === 'taskModal') {
+    await interaction.deferUpdate();
+
+    taskDetails[7] = interaction.fields.getTextInputValue('taskTimeAllocation') || '-';
+    taskDetails[8] = interaction.fields.getTextInputValue('taskDeadline') || '-';
+    taskDetails[10] = interaction.fields.getTextInputValue('taskLocation') || '-';
+    taskDetails[5] = interaction.fields.getTextInputValue('taskNotes') || '-';
+  }
+});
+
+client.login(process.env.DISCORD_TOKEN);
